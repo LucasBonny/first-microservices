@@ -90,6 +90,19 @@ spring.datasource.password=1234567
 spring.jpa.hibernate.ddl-auto=update
 ```
 
+Após configurar o User Microservice, vamos configurar a entidade User:
+
+```java
+@Id
+@GeneratedValue(strategy = GenerationType.AUTO)
+private UUID id;
+private String email;
+private String password;
+```
+
+> [!TIP]
+> Usaremos o UUID para gerar o ID do usuário pois com sistema distribuído como o nosso, o IDs sequencial podem causar conflitos.
+
 
 ### Implementação do Email Microservice
 
