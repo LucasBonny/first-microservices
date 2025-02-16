@@ -153,6 +153,8 @@ Criaremos uma propriedade no `application.properties` para configurar o `RabbitM
 
 ```properties
 spring.rabbitmq.addresses=amqp://localhost/username
+
+broker.queue.email.name=default.email
 ```
 
 com essa configuração você deverá criar uma classe de configuração do Spring no pacote `configs`.
@@ -198,5 +200,82 @@ public record EmailRecordDTO(UUID id, String emailTo, String subject, String tex
 		return "EmailRecordDTO [userId=" + userId + ", emailTo=" + emailTo + ", subject=" + subject + ", text=" + text
 				+ "]";
 	}
+}
+```
+### Publicar Mensagem na Fila usando o Default Exchange
+
+1. Configurar o RabbitMQ no `application.properties` do User Microservice
+```properties
+spring.rabbitmq.addresses=amqp://localhost/username
+
+broker.queue.email.name=default.email
+```
+
+2. Criar a classe de configuração do Spring no pacote `configs`
+```java
+@Configuration
+public class RabbitMQConfig {
+    
+    @Bean
+    Jackson2JsonMessageConverter messageConverter() { // Configurando o converter de mensagem
+        ObjectMapper objectMapper = new ObjectMapper();
+        return new Jackson2JsonMessageConverter(objectMapper);
+    }
+}
+```
+Só será necessário o conversor na classe. E agora iremos criar uma classe que irá publicar a mensagem na fila no pacote `producers`.
+
+```java
+@Component
+public class UserProducer { // Classe para publicar a mensagem na fila
+	
+	@Autowired
+	private RabbitTemplate rabbitTemplate; // Template de mensagens do RabbitMQ
+	
+	@Value(value = "${broker.queue.email.name}")
+	private String routingKey; // Nome da fila
+	
+	public void publishMessageEmail(UserModel userModel) { // Metodo para publicar a mensagem na fila
+		
+		var emailDto = new EmailDTO();
+		emailDto.setUserId(userModel.getId());
+		emailDto.setEmailTo(userModel.getEmail());
+		emailDto.setSubject("Cadastro realizado com sucesso!");
+		emailDto.setSubject(userModel.getName() + ", seja bem vindo(a)! \nAgradecemos o seu cadastro, aproveite agora!");
+		
+
+        // ConvertAndSent ( exchange, key, payload )
+		rabbitTemplate.convertAndSend("", routingKey, emailDto); // Publicando a mensagem na fila
+		
+	}
+
+}
+```
+Devemos criar o emailDTO no `models.dto`.
+
+```java
+public class EmailDTO {
+
+    private UUID userId;
+    private String emailTo;
+    private String subject;
+    private String text;
+
+    // Getters e Setters
+}
+```
+
+E com isso podemos chamá-lo no `UserService`.
+
+```java
+
+@Autowired
+private UserProducer producer;
+
+@Transactional
+public UserModel save(UserModel userModel) {
+    userModel = repository.save(userModel);
+    producer.publishMessageEmail(userModel); // Publicando a mensagem na fila
+    return userModel;
 }
 ```
