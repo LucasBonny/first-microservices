@@ -140,3 +140,63 @@ spring.datasource.password=1234567
 # Gerenciamento da base de dados
 spring.jpa.hibernate.ddl-auto=update
 ```
+
+### Configurando o CloudAMQP
+
+Será necessário acessar o site [CloudAMQP](https://www.cloudamqp.com/) e criar o projeto no plano gratuito.
+
+Com isso você terá acesso ao acesso do seu projeto criado no CloudAMQP, e com isso você pode configurar uma `fila` para o seu projeto.
+
+### Configurando o RabbitMQ no projeto
+
+Criaremos uma propriedade no `application.properties` para configurar o `RabbitMQ`.
+
+```properties
+spring.rabbitmq.addresses=amqp://localhost/username
+```
+
+com essa configuração você deverá criar uma classe de configuração do Spring no pacote `configs`.
+
+```java
+@Configuration
+public class RabbitMQConfig {
+	
+	@Value("${broker.queue.email.name}") // Recuperando o nome da fila configurada no properties
+	private String queue;
+	
+	@Bean
+	Queue queue() { // Configurando a fila
+		return new Queue(queue, true);
+	}
+	
+	@Bean
+	Jackson2JsonMessageConverter messageConverter() { // Configurando o converter de mensagem
+		ObjectMapper objectMapper = new ObjectMapper();
+		return new Jackson2JsonMessageConverter(objectMapper);
+	}
+
+}
+```
+Agora será necessário criar um `Consumer` para receber as mensagens da fila.
+
+```java
+@Component
+public class EmailConsumer {
+
+    @RabbitListener(queues = "${broker.queue.email.name}")
+	public void listenEmailQueue(@Payload EmailRecordDTO emailRecordDTO) {
+		System.out.println(emailRecordDTO);
+	}
+}
+```
+E o `Record` seria um objeto imutável.
+
+```java
+public record EmailRecordDTO(UUID id, String emailTo, String subject, String text) {
+    @Override
+	public String toString() {
+		return "EmailRecordDTO [userId=" + userId + ", emailTo=" + emailTo + ", subject=" + subject + ", text=" + text
+				+ "]";
+	}
+}
+```
