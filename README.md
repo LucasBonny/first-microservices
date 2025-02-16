@@ -279,3 +279,133 @@ public UserModel save(UserModel userModel) {
     return userModel;
 }
 ```
+### Implementação o SMTP no projeto
+
+1. Definindo o SMTP no `application.properties`
+
+```properties
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=seuemail@gmail.com
+spring.mail.password=suaSenha
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+```
+
+2. Criar os status dos emails para registrar na base de dados
+
+```java
+public enum StatusEmail {
+    SENT, 
+    ERROR
+}
+```
+3. Criar a classe de modelo para o email
+```java
+@Entity
+@Table(name = "tb_emails")
+public class EmailModel implements Serializable {
+	private static final long serialVersionUID = 1L;
+	
+	@Id
+	@GeneratedValue(strategy = GenerationType.AUTO)
+	private UUID emailId;
+	private UUID userId;
+	private String emailFrom;
+	private String emailTo;
+	private String subject;
+	@Column(columnDefinition = "TEXT")
+	private String text;
+	private LocalDateTime sendDateTime;
+	private StatusEmail statusEmail;
+
+    // getters e setters
+}
+```
+
+4. Criar a classe de EmailService no `services`
+```java
+@Service
+public class EmailService {
+	
+	@Autowired
+	private EmailRepository repository;
+	
+	@Autowired
+	private JavaMailSender emailSender;
+	
+	@Value("${spring.mail.username}")
+	private String emailFrom;
+	
+	@Transactional
+	public EmailModel sendEmail(EmailModel emailModel) {
+		try {
+			emailModel.setSendDateTime(LocalDateTime.now());
+			emailModel.setEmailFrom(emailFrom);
+			
+			SimpleMailMessage message = new SimpleMailMessage();
+			message.setTo(emailModel.getEmailTo());
+			message.setSubject(emailModel.getSubject());
+			message.setText(emailModel.getText());
+			emailSender.send(message);
+
+			emailModel.setStatusEmail(StatusEmail.SENT);
+		}
+		catch(MailException e) {
+			emailModel.setStatusEmail(StatusEmail.ERROR);
+		}
+		finally {
+			return repository.save(emailModel);
+		}
+	}
+}
+```
+
+5. Por ultimo executar o sendEmail no listenEmailQueue no `EmailConsumer`
+```java
+@Component
+public class EmailConsumer {
+	
+	@Autowired
+	private EmailService service;
+
+	@RabbitListener(queues = "${broker.queue.email.name}")
+	public void listenEmailQueue(@Payload EmailRecordDTO emailRecordDTO) {
+		var emailModel = new EmailModel();
+		BeanUtils.copyProperties(emailRecordDTO, emailModel);
+		service.sendEmail(emailModel); // Realizando o envio do e-mail
+	}
+}
+```
+## Conclusão
+
+- O `Producer` irá enviar uma mensagem para a `Queue` do Broker.
+- O `Consumer` irá está conectado no canal de mensagens do Broker e ouvir as mensagens enviadas pelas `Queues` e realizar a ação correspondente.
+
+## Demonstração
+
+### 1° Passo - Enviar o comando POST /USERS
+```http
+POST http://localhost:8081/users
+{
+    "name": "seuNome",
+    "email": "seuemail@gmail.com",
+}
+```
+![result post users](assets/image-4.png)
+
+### 2° Passo - Checar a fila do RabbitMQ
+
+![Queue in RabbitMQ](assets/image-5.png)
+
+### 3° Passo - Checar a fila do Email Microservice
+
+Fiz uma pequena alteração no finally para mostrar o resultado no console
+![Consumer in Email Microservice](assets/image-6.png)
+
+
+### 4° Passo - Validar no banco de dados
+![Data base](assets/image-7.png)
+
+### 5° Passo - Validar no email
+![Check Email](assets/image-8.jpg)
